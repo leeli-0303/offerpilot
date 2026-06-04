@@ -8,16 +8,30 @@ import hashlib
 import os
 import streamlit as st
 
+# ── Auto-load .env (once, at import time) ──────────────────────────────
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _env_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"
+    )
+    if os.path.isfile(_env_path):
+        _load_dotenv(_env_path)
+except ImportError:
+    pass
+
 SESSION_AUTH_KEY = "_offerpilot_authenticated"
 SESSION_USER_ID_KEY = "_offerpilot_user_id"
+
+# Fixed pepper for password hashing — must never change, otherwise all
+# existing password hashes become invalid.
+_PEPPER = "offerpilot-2026-fixed-pepper"
 
 
 # ── Password helpers ─────────────────────────────────────────────────────
 
 def hash_password(password: str) -> str:
     """Return a SHA-256 hex digest of *password* (salted with a fixed pepper)."""
-    pepper = os.environ.get("LLM_API_KEY", "offerpilot-default-pepper")[:16]
-    return hashlib.sha256((pepper + password).encode("utf-8")).hexdigest()
+    return hashlib.sha256((_PEPPER + password).encode("utf-8")).hexdigest()
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
