@@ -1,0 +1,23 @@
+# 环境变量（含 API Key）
+.env
+
+# 数据目录（运行时生成）
+data/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 系统文件
+.DS_Store
+Thumbs.db
