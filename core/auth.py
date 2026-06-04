@@ -49,6 +49,117 @@ def logout_user():
     st.session_state.pop(SESSION_USER_ID_KEY, None)
 
 
+# ── Guest / Demo account ──────────────────────────────────────────────────
+
+GUEST_USERNAME = "guest"
+GUEST_PASSWORD = "guest123"
+
+
+def seed_demo_data(store, user_id: str):
+    """Seed mock demo data for a user account (idempotent — skips if already has data).
+
+    Each demo account gets a fresh copy of the mock data with IDs prefixed
+    to avoid collisions across users.
+    """
+    import copy
+    from datetime import datetime as _dt
+    from core.mock_data import (
+        get_mock_jobs, get_mock_resumes, get_mock_applications,
+        get_mock_interviews, get_mock_match_results, get_mock_weekly_reviews,
+    )
+
+    # Already seeded?
+    existing = store.get_all_jobs(user_id=user_id)
+    if existing:
+        return
+
+    prefix = f"demo-{user_id}-"
+
+    # ── Jobs ────────────────────────────────────────────────────────────
+    jobs = copy.deepcopy(get_mock_jobs())
+    id_map_job = {}
+    for j in jobs:
+        new_id = f"{prefix}{j.id}"
+        id_map_job[j.id] = new_id
+        j.id = new_id
+        j.user_id = user_id
+        j.created_at = _dt.now()
+        j.updated_at = _dt.now()
+        store.add_job(j, user_id=user_id)
+
+    # ── Resumes ─────────────────────────────────────────────────────────
+    resumes = copy.deepcopy(get_mock_resumes())
+    id_map_resume = {}
+    for r in resumes:
+        new_id = f"{prefix}{r.id}"
+        id_map_resume[r.id] = new_id
+        r.id = new_id
+        r.user_id = user_id
+        r.created_at = _dt.now()
+        r.updated_at = _dt.now()
+        store.add_resume(r, user_id=user_id)
+
+    # ── Applications ────────────────────────────────────────────────────
+    apps = copy.deepcopy(get_mock_applications())
+    id_map_app = {}
+    for a in apps:
+        new_id = f"{prefix}{a.id}"
+        id_map_app[a.id] = new_id
+        a.id = new_id
+        a.user_id = user_id
+        a.job_id = id_map_job.get(a.job_id, a.job_id)
+        a.resume_id = id_map_resume.get(a.resume_id, a.resume_id)
+        a.created_at = _dt.now()
+        a.updated_at = _dt.now()
+        store.add_application(a, user_id=user_id)
+
+    # ── InterviewRecords ────────────────────────────────────────────────
+    interviews = copy.deepcopy(get_mock_interviews())
+    for iv in interviews:
+        iv.id = f"{prefix}{iv.id}"
+        iv.user_id = user_id
+        iv.application_id = id_map_app.get(iv.application_id, iv.application_id)
+        iv.created_at = _dt.now()
+        iv.updated_at = _dt.now()
+        store.add_interview(iv, user_id=user_id)
+
+    # ── MatchResults ────────────────────────────────────────────────────
+    matches = copy.deepcopy(get_mock_match_results())
+    for m in matches:
+        m.id = f"{prefix}{m.id}"
+        m.user_id = user_id
+        m.job_id = id_map_job.get(m.job_id, m.job_id)
+        m.resume_id = id_map_resume.get(m.resume_id, m.resume_id)
+        m.created_at = _dt.now()
+        store.add_match_result(m, user_id=user_id)
+
+    # ── WeeklyReviews ───────────────────────────────────────────────────
+    reviews = copy.deepcopy(get_mock_weekly_reviews())
+    for rv in reviews:
+        rv.id = f"{prefix}{rv.id}"
+        rv.user_id = user_id
+        rv.created_at = _dt.now()
+        rv.updated_at = _dt.now()
+        store.add_weekly_review(rv, user_id=user_id)
+
+
+def ensure_guest_account(store) -> str:
+    """Create guest demo account if it doesn't exist. Returns user_id."""
+    user_row = store.get_user_by_username(GUEST_USERNAME)
+    if user_row:
+        uid = user_row["id"]
+    else:
+        ok, uid = store.create_user(
+            username=GUEST_USERNAME,
+            display_name="求职者（演示）",
+            password_hash=hash_password(GUEST_PASSWORD),
+        )
+        if not ok:
+            raise RuntimeError(f"Failed to create guest account: {uid}")
+    seed_demo_data(store, uid)
+    return uid
+
+
 # ── Gate ─────────────────────────────────────────────────────────────────
 
 def require_login():
@@ -100,6 +211,9 @@ def require_login():
     .login-hero .sub {
         font-size: 13px;
         color: #80868b;
+    }
+    .guest-section {
+        margin-top: 12px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -156,6 +270,19 @@ def _render_login_tab(store):
                     login_user(user_row["id"])
                     st.success("登录成功！")
                     st.rerun()
+
+    # ── Guest / demo quick entry ────────────────────────────────────────
+    st.markdown("<div class='guest-section'>", unsafe_allow_html=True)
+    st.caption("还没账号？点击下方按钮体验完整功能（含演示数据）")
+    if st.button("👋 游客体验", use_container_width=True, type="secondary"):
+        uid = ensure_guest_account(store)
+        login_user(uid)
+        st.success("正在进入 OfferPilot 演示版...")
+        st.rerun()
+    st.caption(
+        "游客账号：guest / guest123（可长期使用，数据独立保存）"
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Register tab ─────────────────────────────────────────────────────────
