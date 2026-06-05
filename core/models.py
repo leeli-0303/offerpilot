@@ -218,6 +218,22 @@ class InterviewJournal:
 
 
 @dataclass
+class PrepNote:
+    """User's self-recorded interview preparation note.
+
+    Unlike InterviewJournal (which records actual interview experiences),
+    this is for recording personal preparation notes, practice questions,
+    and general interview readiness materials.
+    """
+    id: str
+    user_id: str = ""
+    date: Optional[datetime] = None      # 记录日期
+    topic: str = ""                      # 记录主题
+    content: str = ""                    # 详细内容
+    created_at: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
 class UserProfile:
     """Local user profile — simple single-user identity & preferences.
 

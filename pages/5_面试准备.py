@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import datetime
 
 from core.data_store import store
-from core.models import InterviewJournal
+from core.models import InterviewJournal, PrepNote
 from core.utils import generate_id
 from services.interview_prep import generate_interview_prep, generate_interview_prep_with_llm
 from services.llm_client import get_llm_config
@@ -648,6 +648,130 @@ if journals:
                         st.error(msg)
 else:
     st.info("还没有面试复盘记录。点击上方「➕ 添加面试复盘记录」开始记录你的面试经历。")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Section 3: Interview Prep Notes (manual preparation records)
+# ═══════════════════════════════════════════════════════════════════════════
+
+st.divider()
+st.subheader("📝 面试准备记录")
+st.caption("记录你平时的面试准备内容，如知识点总结、常见题整理、项目话术草稿等")
+
+# ── Initialize edit state ─────────────────────────────────────────────────
+if "editing_prep_note_id" not in st.session_state:
+    st.session_state.editing_prep_note_id = None
+
+# ── Add PrepNote Form ──────────────────────────────────────────────────
+if not st.session_state.editing_prep_note_id:
+    with st.expander("➕ 添加面试准备记录", expanded=False):
+        with st.form("add_prep_note_form", clear_on_submit=True):
+            pn1, pn2 = st.columns([1, 2])
+            with pn1:
+                note_date = st.date_input(
+                    "记录日期", value=datetime.now().date(), key="prep_note_date",
+                )
+            with pn2:
+                note_topic = st.text_input(
+                    "记录主题", placeholder="如：Java 并发编程常见面试题整理",
+                    key="prep_note_topic",
+                )
+            note_content = st.text_area(
+                "详细内容",
+                placeholder="在这里写下你的面试准备内容、知识点总结、回答话术草稿...",
+                height=300,
+                key="prep_note_content",
+            )
+            submitted = st.form_submit_button("💾 保存准备记录", type="primary", use_container_width=True)
+            if submitted:
+                if not note_topic.strip():
+                    st.error("请至少填写「记录主题」")
+                else:
+                    prep_note = PrepNote(
+                        id=generate_id("prepnote"),
+                        date=datetime.combine(note_date, datetime.min.time()) if note_date else None,
+                        topic=note_topic.strip(),
+                        content=note_content.strip(),
+                    )
+                    store.add_prep_note(prep_note)
+                    st.success(f"面试准备记录「{note_topic.strip()}」已保存！")
+                    st.rerun()
+
+# ── Edit PrepNote Form ──────────────────────────────────────────────────
+if st.session_state.editing_prep_note_id:
+    edit_note = store.get_prep_note(st.session_state.editing_prep_note_id)
+    if edit_note:
+        with st.expander("✏️ 编辑面试准备记录", expanded=True):
+            with st.form("edit_prep_note_form", clear_on_submit=True):
+                epn1, epn2 = st.columns([1, 2])
+                with epn1:
+                    edit_note_date = st.date_input(
+                        "记录日期",
+                        value=edit_note.date.date() if edit_note.date else datetime.now().date(),
+                        key="edit_prep_note_date",
+                    )
+                with epn2:
+                    edit_note_topic = st.text_input(
+                        "记录主题",
+                        value=edit_note.topic,
+                        placeholder="如：Java 并发编程常见面试题整理",
+                        key="edit_prep_note_topic",
+                    )
+                edit_note_content = st.text_area(
+                    "详细内容",
+                    value=edit_note.content,
+                    placeholder="在这里写下你的面试准备内容、知识点总结、回答话术草稿...",
+                    height=300,
+                    key="edit_prep_note_content",
+                )
+                col1, col2 = st.columns(2)
+                with col1:
+                    update_submitted = st.form_submit_button("💾 更新记录", type="primary", use_container_width=True)
+                with col2:
+                    cancel_edit = st.form_submit_button("取消编辑", use_container_width=True)
+
+                if update_submitted:
+                    if not edit_note_topic.strip():
+                        st.error("请至少填写「记录主题」")
+                    else:
+                        edit_note.date = datetime.combine(edit_note_date, datetime.min.time()) if edit_note_date else None
+                        edit_note.topic = edit_note_topic.strip()
+                        edit_note.content = edit_note_content.strip()
+                        store.update_prep_note(edit_note)
+                        st.session_state.editing_prep_note_id = None
+                        st.success(f"面试准备记录「{edit_note_topic.strip()}」已更新！")
+                        st.rerun()
+
+                if cancel_edit:
+                    st.session_state.editing_prep_note_id = None
+                    st.rerun()
+
+# ── Display existing prep notes ─────────────────────────────────────────
+prep_notes = store.get_all_prep_notes()
+
+if prep_notes:
+    for pn in prep_notes:
+        date_str = pn.date.strftime("%Y-%m-%d") if pn.date else "日期未记录"
+        with st.expander(f"📝 {pn.topic} · {date_str}"):
+            st.caption(f"记录日期：{date_str}  |  创建于：{pn.created_at.strftime('%Y-%m-%d %H:%M') if pn.created_at else '—'}")
+            if pn.content:
+                _render_content(pn.content, "prep-section", "border-left:3px solid #1a73e8;")
+
+            btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 4])
+            with btn_col1:
+                if st.button("✏️ 编辑", key=f"edit_prep_note_{pn.id}"):
+                    st.session_state.editing_prep_note_id = pn.id
+                    st.rerun()
+            with btn_col2:
+                if st.button("🗑️ 删除", key=f"del_prep_note_{pn.id}", type="secondary"):
+                    success, msg = store.delete_prep_note(pn.id)
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+else:
+    st.info("还没有面试准备记录。点击上方「➕ 添加面试准备记录」开始整理你的面试准备资料。")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

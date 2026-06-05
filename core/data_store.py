@@ -11,15 +11,15 @@ from typing import Optional
 from core.database import (
     Database, DB_PATH, RESUMES_DIR,
     _row_to_job, _row_to_resume, _row_to_application, _row_to_interview,
-    _row_to_journal, _row_to_match, _row_to_review,
+    _row_to_journal, _row_to_match, _row_to_review, _row_to_prep_note,
     _job_to_row, _resume_to_row, _application_to_row, _interview_to_row,
-    _journal_to_row, _match_to_row, _review_to_row,
+    _journal_to_row, _match_to_row, _review_to_row, _prep_note_to_row,
     _json_dumps, _json_loads, _now, _parse_dt,
 )
 from core.models import (
     Job, JobStatus, ResumeVersion, Application,
     InterviewRecord, InterviewRound, MatchResult, WeeklyReview,
-    InterviewJournal, UserProfile,
+    InterviewJournal, UserProfile, PrepNote,
     APPLICATION_STATUSES_V2,
 )
 
@@ -353,6 +353,35 @@ class DataStore:
         position = journal.job_position or "未知岗位"
         self._db._delete("interview_journals", journal_id)
         return (True, f"面试记录「{position}」已删除")
+
+    # ── PrepNote ─────────────────────────────────────────────────────────
+
+    def get_all_prep_notes(self, user_id: Optional[str] = None) -> list[PrepNote]:
+        uid = self._resolve_uid(user_id)
+        return self._db._get_all("prep_notes", uid, PrepNote, _row_to_prep_note)
+
+    def get_prep_note(self, note_id: str) -> Optional[PrepNote]:
+        return self._db._get_one("prep_notes", note_id, PrepNote, _row_to_prep_note)
+
+    def add_prep_note(self, note: PrepNote, user_id: Optional[str] = None):
+        note.user_id = self._resolve_uid(user_id)
+        if not note.created_at:
+            note.created_at = datetime.now()
+        self._db._insert("prep_notes", note, _prep_note_to_row)
+
+    def update_prep_note(self, note: PrepNote):
+        row = _prep_note_to_row(note)
+        self._db._update("prep_notes", note.id, {
+            k: v for k, v in row.items() if k not in ("id", "user_id")
+        })
+
+    def delete_prep_note(self, note_id: str) -> tuple[bool, str]:
+        note = self.get_prep_note(note_id)
+        if note is None:
+            return (False, f"面试准备记录 '{note_id}' 不存在")
+        topic = note.topic or "未知主题"
+        self._db._delete("prep_notes", note_id)
+        return (True, f"面试准备记录「{topic}」已删除")
 
     # ── MatchResult ─────────────────────────────────────────────────────
 

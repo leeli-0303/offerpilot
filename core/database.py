@@ -14,7 +14,7 @@ from typing import Optional
 from core.models import (
     Job, JobStatus, ResumeVersion, Application,
     InterviewRecord, InterviewRound, MatchResult, WeeklyReview,
-    InterviewJournal, UserProfile,
+    InterviewJournal, UserProfile, PrepNote,
 )
 
 # ── Paths ─────────────────────────────────────────────────────────────────
@@ -178,6 +178,17 @@ CREATE TABLE IF NOT EXISTS weekly_reviews (
     updated_at TEXT DEFAULT '',
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS prep_notes (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    date TEXT DEFAULT NULL,
+    topic TEXT DEFAULT '',
+    content TEXT DEFAULT '',
+    created_at TEXT DEFAULT '',
+    updated_at TEXT DEFAULT '',
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
 """
 
 
@@ -203,10 +214,14 @@ class Database:
     def _migrate_schema(self):
         """Add any missing columns to existing tables (forward-compat)."""
         # Add llm_settings column if it doesn't exist (v0.2 → v0.3)
-        try:
-            self._conn.execute("ALTER TABLE users ADD COLUMN llm_settings TEXT DEFAULT '{}'")
-        except sqlite3.OperationalError:
-            pass  # column already exists
+        for col_sql, table in [
+            ("ALTER TABLE users ADD COLUMN llm_settings TEXT DEFAULT '{}'", "users"),
+            ("ALTER TABLE prep_notes ADD COLUMN updated_at TEXT DEFAULT ''", "prep_notes"),
+        ]:
+            try:
+                self._conn.execute(col_sql)
+            except sqlite3.OperationalError:
+                pass  # column already exists or table doesn't exist yet
 
     # ── Migration ──────────────────────────────────────────────────────
 
@@ -534,6 +549,17 @@ def _row_to_match(row: dict) -> MatchResult:
     )
 
 
+def _row_to_prep_note(row: dict) -> PrepNote:
+    return PrepNote(
+        id=row["id"],
+        user_id=row.get("user_id", ""),
+        date=_parse_dt(row.get("date")),
+        topic=row.get("topic", ""),
+        content=row.get("content", ""),
+        created_at=_parse_dt(row.get("created_at")) or datetime.now(),
+    )
+
+
 def _row_to_review(row: dict) -> WeeklyReview:
     return WeeklyReview(
         id=row["id"],
@@ -655,6 +681,18 @@ def _match_to_row(m: MatchResult) -> dict:
         "gaps": _json_dumps(m.gaps),
         "suggestions": _json_dumps(m.suggestions),
         "created_at": m.created_at.isoformat() if m.created_at else _now(),
+        "updated_at": _now(),
+    }
+
+
+def _prep_note_to_row(n: PrepNote) -> dict:
+    return {
+        "id": n.id,
+        "user_id": n.user_id,
+        "date": n.date.isoformat() if n.date else None,
+        "topic": n.topic,
+        "content": n.content,
+        "created_at": n.created_at.isoformat() if n.created_at else _now(),
         "updated_at": _now(),
     }
 
